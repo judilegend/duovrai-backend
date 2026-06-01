@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Votre Analyse de Compatibilité Amoureuse - Duovrai</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
+
+        @page {
+            size: A4;
+            margin: 20mm 15mm 20mm 15mm;
+            @bottom-right {
+                content: "Page " counter(page);
+                font-family: 'Plus Jakarta Sans', sans-serif;
+                font-size: 8pt;
+                color: #a0aec0;
+            }
+            @bottom-left {
+                content: "Duovrai - Analyse de Compatibilité Personnalisée";
+                font-family: 'Plus Jakarta Sans', sans-serif;
+                font-size: 8pt;
+                color: #a0aec0;
+            }
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: #2d3748;
+            line-height: 1.6;
+            font-size: 11pt;
+            background-color: #ffffff;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Playfair Display', serif;
+            color: #4a154b;
+            font-weight: 700;
+        }
+
+        /* Front Page Styles */
+        .cover-page {
+            page-break-after: always;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding-top: 50mm;
+            position: relative;
+        }
+
+        .cover-logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 32pt;
+            font-weight: 700;
+            color: #e53e3e;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+        }
+
+        .cover-logo span {
+            color: #4a154b;
+        }
+
+        .cover-title {
+            font-size: 28pt;
+            color: #2d3748;
+            margin-top: 10px;
+            margin-bottom: 30px;
+            line-height: 1.2;
+        }
+
+        .cover-subtitle {
+            font-size: 14pt;
+            color: #718096;
+            margin-bottom: 60mm;
+            font-style: italic;
+        }
+
+        .cover-couple {
+            font-family: 'Playfair Display', serif;
+            font-size: 24pt;
+            color: #4a154b;
+            border-top: 2px solid #fed7d7;
+            border-bottom: 2px solid #fed7d7;
+            padding: 15px 40px;
+            margin-bottom: 40px;
+            display: inline-block;
+        }
+
+        .cover-footer {
+            font-size: 9pt;
+            color: #a0aec0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Content Page Styles */
+        .chapter {
+            page-break-before: always;
+            padding-top: 10mm;
+        }
+
+        .chapter:first-of-type {
+            page-break-before: avoid;
+        }
+
+        h2 {
+            font-size: 20pt;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 8px;
+            margin-top: 30px;
+            margin-bottom: 20px;
+            color: #4a154b;
+        }
+
+        h3 {
+            font-size: 14pt;
+            color: #e53e3e;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+            color: #4a5568;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        li {
+            margin-bottom: 8px;
+            color: #4a5568;
+        }
+
+        /* Special Highlights */
+        blockquote, .highlight-box {
+            background-color: #fff5f5;
+            border-left: 4px solid #e53e3e;
+            padding: 15px 20px;
+            margin: 25px 0;
+            border-radius: 0 8px 8px 0;
+            font-style: italic;
+        }
+
+        blockquote p {
+            margin: 0;
+            color: #9b2c2c;
+        }
+
+        .divider {
+            height: 1px;
+            background: linear-gradient(to right, transparent, #fed7d7, transparent);
+            margin: 40px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Cover Page -->
+    <div class="cover-page">
+        <div class="cover-logo">Duo<span>vrai</span></div>
+        <div class="cover-title">Analyse Divine de<br>Compatibilité Amoureuse</div>
+        <div class="cover-subtitle">Une lecture intime guidée par l'intelligence artificielle</div>
+        
+        <div class="cover-couple">
+            {{ partner1_name }} &amp; {{ partner2_name }}
+        </div>
+        
+        <div style="margin-bottom: 30mm;">
+            <p style="text-align: center; font-size: 10pt; color: #718096;">
+                Généré spécialement pour vous le {{ date_generated }}<br>
+                Basé sur vos dates de naissance respectives : {{ partner1_birthdate }} et {{ partner2_birthdate }}
+            </p>
+        </div>
+        
+        <div class="cover-footer">Document Confidentiel — Rapport de {{ plan_type }}</div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="report-content">
+        {{ report_html | safe }}
+    </div>
+
+</body>
+</html>

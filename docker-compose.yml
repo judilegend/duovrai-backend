@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: duovrai-postgres-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: duovrai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: duovrai-fastapi-app
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      # Sync app directory for hot-reload in development
+      - .:/workspace
+      - reports_storage:/workspace/storage/reports
+    environment:
+      - ENVIRONMENT=development
+      - PROJECT_NAME=Duovrai Backend
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgrespassword@db:5432/duovrai
+      # Make sure to copy these from your local .env or configure them
+      - STRIPE_API_KEY=sk_test_mock_keys_duovrai_backend
+      - STRIPE_WEBHOOK_SECRET=whsec_mock_keys_duovrai_backend
+      - STRIPE_PRICE_ESSENTIEL=price_essentiel_mock
+      - STRIPE_PRICE_PREMIUM=price_premium_mock
+      - ANTHROPIC_API_KEY=sk-ant-api03-dummy
+      - SMTP_HOST=smtp.mailtrap.io
+      - SMTP_PORT=2525
+      - SMTP_USERNAME=mock_username
+      - SMTP_PASSWORD=mock_password
+      - SMTP_FROM_EMAIL=reports@duovrai.com
+      - SMTP_FROM_NAME=Duovrai - Analyse Amoureuse
+      - PDF_OUTPUT_DIR=/workspace/storage/reports
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  reports_storage:
