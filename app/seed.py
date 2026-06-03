@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import sys
@@ -6,7 +7,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, close_all_sessions
+from app.core.config import settings
 from app.database.session import SessionLocal, engine
 from app.database.base import Base
 from app.models.models import Order, CompatibilityReport
@@ -15,13 +17,29 @@ from app.types.enums import OrderStatus, PlanType
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def seed_database():
+def reset_database() -> None:
+    """Reset the local SQLite database file and recreate tables."""
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        logger.warning("Reset is only implemented for SQLite databases.")
+        return
+
+    close_all_sessions()
+    engine.dispose()
+
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+
+def seed_database(reset: bool = False):
     """
     Seeds the database with three standard orders representing three stages of
     the Duovrai customer flow (PENDING, PAID, COMPLETED) to facilitate immediate frontend testing.
     """
     logger.info("Starting database seeding...")
-    
+
+    if reset:
+        reset_database()
+
     # Ensure tables exist
     Base.metadata.create_all(bind=engine)
     db: Session = SessionLocal()
@@ -98,4 +116,12 @@ def seed_database():
         db.close()
 
 if __name__ == "__main__":
-    seed_database()
+    parser = argparse.ArgumentParser(description="Seed demo data for Duovrai")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Remove the current SQLite database and reseed demo data from scratch.",
+    )
+    args = parser.parse_args()
+
+    seed_database(reset=args.reset)
