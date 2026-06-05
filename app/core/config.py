@@ -1,8 +1,12 @@
 import os
 from typing import List, Union
+from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, BeforeValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Annotated
+
+# Force local .env file variables to override any cached environment variables in the OS/Terminal session
+load_dotenv(override=True)
 
 def parse_cors_origins(v: Union[str, List[str]]) -> List[str]:
     if isinstance(v, str) and not v.startswith("["):
@@ -39,6 +43,7 @@ class Settings(BaseSettings):
 
     # Stripe
     STRIPE_API_KEY: str = ""
+    STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_SUCCESS_URL: str = "http://localhost:3000/success?session_id={CHECKOUT_SESSION_ID}"
     STRIPE_CANCEL_URL: str = "http://localhost:3000/retry"
@@ -57,6 +62,13 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM_EMAIL: str = "reports@duovrai.com"
     SMTP_FROM_NAME: str = "Duovrai - Analyse Amoureuse"
+
+    # Gmail Backup Configuration
+    MAIL_HOST: str = "smtp.gmail.com"
+    MAIL_PORT: int = 587
+    MAIL_USERNAME: str = ""
+    MAIL_PASSWORD: str = ""
+    MAIL_FROM: str = ""
 
     # PDF Output Storage Path
     PDF_OUTPUT_DIR: str = os.path.join(
