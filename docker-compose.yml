@@ -30,22 +30,12 @@ services:
       # Sync app directory for hot-reload in development
       - .:/workspace
       - reports_storage:/workspace/storage/reports
+    env_file:
+      - .env
     environment:
       - ENVIRONMENT=development
       - PROJECT_NAME=Duovrai Backend
       - DATABASE_URL=postgresql+psycopg2://postgres:postgrespassword@db:5432/duovrai
-      # Make sure to copy these from your local .env or configure them
-      - STRIPE_API_KEY=sk_test_mock_keys_duovrai_backend
-      - STRIPE_WEBHOOK_SECRET=whsec_mock_keys_duovrai_backend
-      - STRIPE_PRICE_ESSENTIEL=price_essentiel_mock
-      - STRIPE_PRICE_PREMIUM=price_premium_mock
-      - ANTHROPIC_API_KEY=sk-ant-api03-dummy
-      - SMTP_HOST=smtp.mailtrap.io
-      - SMTP_PORT=2525
-      - SMTP_USERNAME=mock_username
-      - SMTP_PASSWORD=mock_password
-      - SMTP_FROM_EMAIL=reports@duovrai.com
-      - SMTP_FROM_NAME=Duovrai - Analyse Amoureuse
       - PDF_OUTPUT_DIR=/workspace/storage/reports
     depends_on:
       db:
