@@ -39,6 +39,8 @@ if settings.BACKEND_CORS_ORIGINS:
 @app.on_event("startup")
 def configure_db():
     logger.info("Initializing database and creating tables...")
+    logger.info(f"Loaded STRIPE_PRICE_ESSENTIEL: '{settings.STRIPE_PRICE_ESSENTIEL}'")
+    logger.info(f"Loaded STRIPE_PRICE_PREMIUM: '{settings.STRIPE_PRICE_PREMIUM}'")
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables initialized successfully.")
