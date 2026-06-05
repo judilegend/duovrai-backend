@@ -122,51 +122,65 @@ async def stripe_webhook(
     """
     Receives events from Stripe Checkout. Validates signature and triggers pipeline.
     """
-    payload = await request.body()
-    sig_header = request.headers.get("Stripe-Signature", "")
+    logger.info("--> Stripe Webhook POST request received at FastAPI!")
+    try:
+        payload = await request.body()
+        sig_header = request.headers.get("Stripe-Signature", "")
 
-    if not sig_header and not stripe_service.is_mock_enabled():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing stripe-signature header"
-        )
+        if not sig_header and not stripe_service.is_mock_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing stripe-signature header"
+            )
 
-    # Reconstruct and verify event
-    event = stripe_service.construct_event(payload, sig_header)
+        # Reconstruct and verify event
+        event = stripe_service.construct_event(payload, sig_header)
 
-    event_type = event.get("type")
-    logger.info(f"Stripe Webhook event received: {event_type}")
+        event_type = event.type
+        logger.info(f"Stripe Webhook event received: {event_type}")
 
-    if event_type == "checkout.session.completed":
-        session = event.get("data", {}).get("object", {})
-        
-        # Pull order ID from metadata
-        order_id = session.get("metadata", {}).get("order_id")
-        stripe_customer_id = session.get("customer")
-        
-        if order_id:
-            logger.info(f"Stripe payment confirmed for Order ID: {order_id}")
+        if event_type == "checkout.session.completed":
+            session = event.data.object
             
-            # Update order as PAID
-            order = order_repository.get(db, order_id)
-            if order:
-                order_repository.update(
-                    db,
-                    db_obj=order,
-                    obj_in_data={
-                        "status": OrderStatus.PAID,
-                        "stripe_customer_id": stripe_customer_id
-                    }
-                )
-                
-                # Push the generation & emailing pipeline to background
-                background_tasks.add_task(generate_and_email_report_pipeline, order_id, db)
+            # Pull order ID from metadata safely
+            metadata = getattr(session, "metadata", None)
+            if isinstance(metadata, dict):
+                order_id = metadata.get("order_id")
             else:
-                logger.error(f"Stripe event references non-existing Order: {order_id}")
-        else:
-            logger.error("Stripe Session completed but lacks order_id metadata")
+                order_id = None
+            stripe_customer_id = getattr(session, "customer", None)
+            
+            if order_id:
+                logger.info(f"Stripe payment confirmed for Order ID: {order_id}")
+                
+                # Update order as PAID
+                order = order_repository.get(db, order_id)
+                if order:
+                    order_repository.update(
+                        db,
+                        db_obj=order,
+                        obj_in_data={
+                            "status": OrderStatus.PAID,
+                            "stripe_customer_id": stripe_customer_id
+                        }
+                    )
+                    
+                    # Push the generation & emailing pipeline to background
+                    background_tasks.add_task(generate_and_email_report_pipeline, order_id, db)
+                else:
+                    logger.error(f"Stripe event references non-existing Order: {order_id}")
+            else:
+                logger.error("Stripe Session completed but lacks order_id metadata")
 
-    return Response(status_code=200)
+        return Response(status_code=200)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.exception(f"Unhandled error in stripe_webhook: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Webhook processing failed: {str(e)}"
+        )
 
 
 @router.get("/mock-checkout-success")
