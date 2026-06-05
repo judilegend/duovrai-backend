@@ -113,6 +113,7 @@ def create_checkout(order_in: OrderCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/webhook")
+@router.post("/stripe/webhook")
 async def stripe_webhook(
     request: Request, 
     background_tasks: BackgroundTasks, 
@@ -201,13 +202,6 @@ async def mock_checkout_success(
     # Spawn background generation task
     background_tasks.add_task(generate_and_email_report_pipeline, order.id, db)
 
-    # Redirect to developer check page or return success JSON
-    return {
-        "message": "Payment simulation successful!",
-        "order_id": order.id,
-        "status": "PAID",
-        "instructions": (
-            f"The AI compatibility analysis and PDF report are being generated in the background. "
-            f"Use the endpoint '/api/v1/reports/{order.id}' to inspect status and download your report."
-        )
-    }
+    # Redirect to frontend success page
+    redirect_url = settings.STRIPE_SUCCESS_URL.replace("{CHECKOUT_SESSION_ID}", session_id)
+    return RedirectResponse(url=redirect_url)
