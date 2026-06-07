@@ -1,193 +1,466 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Votre Analyse de Compatibilité Amoureuse - Duovrai</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
-
-        @page {
-            size: A4;
-            margin: 20mm 15mm 20mm 15mm;
-            @bottom-right {
-                content: "Page " counter(page);
-                font-family: 'Plus Jakarta Sans', sans-serif;
-                font-size: 8pt;
-                color: #a0aec0;
-            }
-            @bottom-left {
-                content: "Duovrai - Analyse de Compatibilité Personnalisée";
-                font-family: 'Plus Jakarta Sans', sans-serif;
-                font-size: 8pt;
-                color: #a0aec0;
-            }
+      @page {
+        size: A4;
+        margin: 20mm 15mm 20mm 15mm;
+        @bottom-right {
+          content: counter(page);
+          font-family: Calibri, sans-serif;
+          font-size: 9pt;
+          color: #b8962e;
+          font-weight: bold;
         }
-
-        body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            color: #2d3748;
-            line-height: 1.6;
-            font-size: 11pt;
-            background-color: #ffffff;
-            margin: 0;
-            padding: 0;
+        @bottom-left {
+          content: "Duovrai — Rapport d'Analyse Personnel";
+          font-family: Calibri, sans-serif;
+          font-size: 9pt;
+          color: #1a5c52;
         }
+      }
 
-        h1, h2, h3, h4 {
-            font-family: 'Playfair Display', serif;
-            color: #4a154b;
-            font-weight: 700;
+      @page :first {
+        margin: 0;
+        @bottom-right {
+          content: "";
         }
+        @bottom-left {
+          content: "";
+        }
+      }
 
-        /* Front Page Styles */
-        .cover-page {
-            page-break-after: always;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            padding-top: 50mm;
-            position: relative;
-        }
+      body {
+        font-family: Calibri, "Segoe UI", Arial, sans-serif;
+        color: #2d3748;
+        line-height: 1.6;
+        font-size: 11.5pt;
+        background-color: #ffffff;
+        margin: 0;
+        padding: 0;
+      }
 
-        .cover-logo {
-            font-family: 'Playfair Display', serif;
-            font-size: 32pt;
-            font-weight: 700;
-            color: #e53e3e;
-            letter-spacing: 2px;
-            margin-bottom: 20px;
-        }
+      h1,
+      h2,
+      h3 {
+        font-family: Georgia, "Times New Roman", serif;
+        color: #1a5c52;
+        font-weight: 700;
+        margin-top: 0;
+      }
 
-        .cover-logo span {
-            color: #4a154b;
-        }
+      h2 {
+        font-size: 24pt;
+        border-bottom: 2px solid #e8f2f0;
+        padding-bottom: 12px;
+        margin-bottom: 25px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
 
-        .cover-title {
-            font-size: 28pt;
-            color: #2d3748;
-            margin-top: 10px;
-            margin-bottom: 30px;
-            line-height: 1.2;
-        }
+      p {
+        margin-bottom: 18px;
+        text-align: justify;
+        color: #3a4454;
+      }
 
-        .cover-subtitle {
-            font-size: 14pt;
-            color: #718096;
-            margin-bottom: 60mm;
-            font-style: italic;
-        }
+      /* Page definitions */
+      .page {
+        page-break-after: always;
+        page-break-inside: avoid;
+        height: 250mm; /* Strict height budget to prevent spills */
+        box-sizing: border-box;
+        position: relative;
+        padding-top: 10mm;
+      }
 
-        .cover-couple {
-            font-family: 'Playfair Display', serif;
-            font-size: 24pt;
-            color: #4a154b;
-            border-top: 2px solid #fed7d7;
-            border-bottom: 2px solid #fed7d7;
-            padding: 15px 40px;
-            margin-bottom: 40px;
-            display: inline-block;
-        }
+      .page:last-child {
+        page-break-after: avoid;
+      }
 
-        .cover-footer {
-            font-size: 9pt;
-            color: #a0aec0;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+      /* Cover Page (Page 1) */
+      .cover-page {
+        height: 297mm; /* Full A4 height */
+        padding: 40mm 20mm 20mm 20mm;
+        text-align: center;
+        background-color: #f9f3e3; /* Duovrai light beige theme background */
+        display: block;
+        box-sizing: border-box;
+      }
 
-        /* Content Page Styles */
-        .chapter {
-            page-break-before: always;
-            padding-top: 10mm;
-        }
+      .logo-container {
+        margin-bottom: 25mm;
+      }
 
-        .chapter:first-of-type {
-            page-break-before: avoid;
-        }
+      .logo-svg {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 15px;
+      }
 
-        h2 {
-            font-size: 20pt;
-            border-bottom: 1px solid #e2e8f0;
-            padding-bottom: 8px;
-            margin-top: 30px;
-            margin-bottom: 20px;
-            color: #4a154b;
-        }
+      .logo-text {
+        font-family: Georgia, serif;
+        font-size: 26pt;
+        font-weight: bold;
+        color: #1a5c52;
+        letter-spacing: 1px;
+      }
 
-        h3 {
-            font-size: 14pt;
-            color: #e53e3e;
-            margin-top: 25px;
-            margin-bottom: 12px;
-        }
+      .logo-text span {
+        color: #b8962e;
+      }
 
-        p {
-            margin-bottom: 15px;
-            text-align: justify;
-            color: #4a5568;
-        }
+      .cover-title {
+        font-family: Georgia, serif;
+        font-size: 28pt;
+        font-weight: 700;
+        color: #1a5c52;
+        line-height: 1.25;
+        margin-top: 10mm;
+        margin-bottom: 5mm;
+      }
 
-        ul {
-            padding-left: 20px;
-            margin-bottom: 15px;
-        }
+      .cover-subtitle {
+        font-size: 13pt;
+        color: #6e7d7a;
+        margin-bottom: 25mm;
+        font-style: italic;
+      }
 
-        li {
-            margin-bottom: 8px;
-            color: #4a5568;
-        }
+      .cover-couple {
+        font-family: Georgia, serif;
+        font-size: 22pt;
+        color: #1a5c52;
+        border-top: 2px solid #b8962e;
+        border-bottom: 2px solid #b8962e;
+        padding: 12px 30px;
+        margin-bottom: 30mm;
+        display: inline-block;
+        background-color: #ffffff;
+        border-radius: 4px;
+      }
 
-        /* Special Highlights */
-        blockquote, .highlight-box {
-            background-color: #fff5f5;
-            border-left: 4px solid #e53e3e;
-            padding: 15px 20px;
-            margin: 25px 0;
-            border-radius: 0 8px 8px 0;
-            font-style: italic;
-        }
+      .cover-meta {
+        font-size: 10pt;
+        color: #6e7d7a;
+        line-height: 1.6;
+      }
 
-        blockquote p {
-            margin: 0;
-            color: #9b2c2c;
-        }
+      .cover-footer {
+        margin-top: 25mm;
+        font-size: 9pt;
+        color: #b8962e;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-weight: bold;
+      }
 
-        .divider {
-            height: 1px;
-            background: linear-gradient(to right, transparent, #fed7d7, transparent);
-            margin: 40px 0;
-        }
+      /* Score Page (Page 2) */
+      .score-page {
+        text-align: center;
+        padding-top: 25mm;
+      }
+
+      .gauge-section {
+        margin: 30mm 0;
+        display: block;
+        text-align: center;
+      }
+
+      .gauge-circle {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        border: 12px solid #e8f2f0;
+        border-top-color: #1a5c52;
+        border-right-color: #b8962e;
+        display: inline-block;
+        position: relative;
+        margin-bottom: 20px;
+      }
+
+      .gauge-value {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: Georgia, serif;
+        font-size: 38pt;
+        font-weight: bold;
+        color: #1a5c52;
+      }
+
+      .gauge-label {
+        font-family: Georgia, serif;
+        font-size: 14pt;
+        color: #b8962e;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .score-explanation {
+        font-size: 13pt;
+        color: #3a4454;
+        max-width: 550px;
+        margin: 0 auto;
+        line-height: 1.7;
+        font-style: italic;
+      }
+
+      /* Content Sections */
+      .content-text {
+        font-size: 11.5pt;
+        color: #3a4454;
+        line-height: 1.7;
+      }
+
+      .content-text p {
+        margin-bottom: 20px;
+      }
+
+      /* Lists for Strengths & Warnings */
+      .points-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .points-list li {
+        position: relative;
+        padding-left: 12mm;
+        margin-bottom: 25px;
+        font-size: 11.5pt;
+        color: #3a4454;
+        line-height: 1.6;
+        text-align: justify;
+      }
+
+      .points-list li::before {
+        content: "";
+        position: absolute;
+        left: 2mm;
+        top: 1.5mm;
+        width: 6mm;
+        height: 6mm;
+        border-radius: 50%;
+      }
+
+      /* Strengths icons (Green Checkmarks) */
+      .strengths li::before {
+        background-color: #e8f2f0;
+        border: 2px solid #1a5c52;
+      }
+      .strengths li::after {
+        content: "✓";
+        position: absolute;
+        left: 3.5mm;
+        top: 1mm;
+        font-size: 10pt;
+        color: #1a5c52;
+        font-weight: bold;
+      }
+
+      /* Warnings icons (Gold Alert Symbols) */
+      .warnings li::before {
+        background-color: #fdf9ee;
+        border: 2px solid #b8962e;
+      }
+      .warnings li::after {
+        content: "!";
+        position: absolute;
+        left: 4.5mm;
+        top: 0.8mm;
+        font-size: 11pt;
+        color: #b8962e;
+        font-weight: bold;
+      }
+
+      /* Rituals style (Custom Or bullet) */
+      .rituals li::before {
+        background-color: #ffffff;
+        border: 2px solid #b8962e;
+        width: 4mm;
+        height: 4mm;
+        top: 2mm;
+      }
+
+      .rituals li::after {
+        content: "";
+      }
+
+      .points-list strong {
+        color: #1a5c52;
+        font-family: Georgia, serif;
+        font-size: 12.5pt;
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      /* Message Box styling */
+      .message-box {
+        background-color: #fdf9ee;
+        border-left: 4px solid #b8962e;
+        padding: 25px;
+        border-radius: 0 8px 8px 0;
+        font-style: italic;
+        font-size: 12pt;
+        color: #1a5c52;
+        line-height: 1.8;
+        margin-top: 10mm;
+      }
     </style>
-</head>
-<body>
-
-    <!-- Cover Page -->
+  </head>
+  <body>
+    <!-- PAGE 1: COVER -->
     <div class="cover-page">
-        <div class="cover-logo">Duo<span>vrai</span></div>
-        <div class="cover-title">Analyse Divine de<br>Compatibilité Amoureuse</div>
-        <div class="cover-subtitle">Une lecture intime guidée par l'intelligence artificielle</div>
-        
-        <div class="cover-couple">
-            {{ partner1_name }} &amp; {{ partner2_name }}
-        </div>
-        
-        <div style="margin-bottom: 30mm;">
-            <p style="text-align: center; font-size: 10pt; color: #718096;">
-                Généré spécialement pour vous le {{ date_generated }}<br>
-                Basé sur vos dates de naissance respectives : {{ partner1_birthdate }} et {{ partner2_birthdate }}
-            </p>
-        </div>
-        
-        <div class="cover-footer">Document Confidentiel — Rapport de {{ plan_type }}</div>
+      <div class="logo-container">
+        <svg
+          class="logo-svg"
+          viewBox="0 0 100 100"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <!-- Two interlaced hearts/infinity loops in Duovrai colors -->
+          <path
+            d="M35 50C35 41.7157 41.7157 35 50 35C58.2843 35 65 41.7157 65 50C65 58.2843 58.2843 65 50 65C41.7157 65 35 58.2843 35 50Z"
+            stroke="#1A5C52"
+            stroke-width="6"
+          />
+          <path
+            d="M50 50C50 41.7157 56.7157 35 65 35C73.2843 35 80 41.7157 80 50C80 58.2843 73.2843 65 65 65C56.7157 65 50 58.2843 50 50Z"
+            stroke="#B8962E"
+            stroke-width="4"
+            stroke-dasharray="2 2"
+          />
+        </svg>
+        <div class="logo-text">Duo<span>vrai</span></div>
+      </div>
+
+      <div class="cover-title">
+        Analyse Divine de<br />Compatibilité Amoureuse
+      </div>
+      <div class="cover-subtitle">
+        Une lecture intime guidée par l'intelligence artificielle
+      </div>
+
+      <div class="cover-couple">
+        {{ partner1_name }} &amp; {{ partner2_name }}
+      </div>
+
+      <div class="cover-meta">
+        Généré spécialement pour vous le {{ date_generated }}<br />
+        Analyses basées sur vos énergies et dates de naissance respectives :<br />
+        {{ partner1_birthdate }} et {{ partner2_birthdate }}
+      </div>
+
+      <div class="cover-footer">
+        Document Confidentiel — Formule {{ plan_type | upper }}
+      </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="report-content">
-        {{ report_html | safe }}
+    <!-- PAGE 2: SCORE -->
+    <div class="page score-page">
+      <h2>Score de Compatibilité Global</h2>
+      <div class="gauge-section">
+        <div class="gauge-circle">
+          <div class="gauge-value">{{ report.score }}%</div>
+        </div>
+        <div class="gauge-label">Harmonie Intime</div>
+      </div>
+      <div class="score-explanation">
+        <p>"{{ report.score_explanation }}"</p>
+      </div>
     </div>
 
-</body>
+    <!-- PAGE 3: EMOTIONAL CONNECTION -->
+    <div class="page">
+      <h2>Connexion Émotionnelle</h2>
+      <div class="content-text">
+        {{ report.connexion_emotionnelle | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+
+    <!-- PAGE 4: COMMUNICATION DYNAMICS -->
+    <div class="page">
+      <h2>Dynamique de Communication</h2>
+      <div class="content-text">
+        {{ report.dynamique_communication | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+
+    <!-- PAGE 5: PHYSICAL ALCHEMY -->
+    <div class="page">
+      <h2>Alchimie Physique &amp; Énergie</h2>
+      <div class="content-text">
+        {{ report.alchimie_physique | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+
+    <!-- PAGE 6: STRENGTHS -->
+    <div class="page">
+      <h2>Points Forts du Couple</h2>
+      <ul class="points-list strengths">
+        {% for pt in report.points_forts %}
+        <li>{{ pt | safe }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- PAGE 7: WARNINGS -->
+    <div class="page">
+      <h2>Points de Vigilance</h2>
+      <ul class="points-list warnings">
+        {% for pt in report.points_vigilance %}
+        <li>{{ pt | safe }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- PAGE 8: FINAL ADVICE -->
+    <div class="page">
+      <h2>Conseil Final Personnalisé</h2>
+      <div class="content-text">
+        {{ report.conseil_final | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+
+    {% if plan_type == "PREMIUM" or plan_type == "premium" %}
+    <!-- PAGE 9: CYCLES OF LIFE (Premium) -->
+    <div class="page">
+      <h2>Analyse des Cycles de Vie</h2>
+      <div class="content-text">
+        {{ report.analyse_cycles_vie | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+
+    <!-- PAGE 10: 12-MONTH PREVISIONS (Premium) -->
+    <div class="page">
+      <h2>Les 12 Prochains Mois</h2>
+      <div class="content-text">
+        {{ report.previsions_12m | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+
+    <!-- PAGE 11: RITUALS (Premium) -->
+    <div class="page">
+      <h2>Rituels de Couple Personnalisés</h2>
+      <ul class="points-list rituals">
+        {% for rit in report.rituels %}
+        <li>{{ rit | safe }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- PAGE 12: IA INTENTION MESSAGE (Premium) -->
+    <div class="page">
+      <h2>Message d'Intention</h2>
+      <div class="message-box">
+        {{ report.message_intention | replace('\n', '<br />') | safe }}
+      </div>
+    </div>
+    {% endif %}
+  </body>
 </html>
