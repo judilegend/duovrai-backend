@@ -1,8 +1,10 @@
 import os
 import re
+import json
 import logging
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import escape
 from app.core.config import settings
 from app.models.models import Order
 
@@ -85,9 +87,148 @@ class PDFService:
         
         return '\n'.join(paragraphs)
 
+    def _extract_json_payload(self, content: str) -> str:
+        """
+        Extracts and sanitizes JSON returned by Claude, including common wrappers
+        such as ```json fences, accidental JS comments, or trailing commas.
+        """
+        if not content:
+            raise ValueError("Empty report content")
+
+        text = content.strip()
+        fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        if fence_match:
+            text = fence_match.group(1).strip()
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            raise ValueError("No JSON object found in Claude response")
+
+        json_text = text[start:end + 1]
+        json_text = self._strip_json_comments(json_text)
+        json_text = re.sub(r",(\s*[}\]])", r"\1", json_text)
+        return json_text
+
+    def _strip_json_comments(self, text: str) -> str:
+        result = []
+        in_string = False
+        escaped = False
+        i = 0
+
+        while i < len(text):
+            char = text[i]
+            next_char = text[i + 1] if i + 1 < len(text) else ""
+
+            if in_string:
+                result.append(char)
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                i += 1
+                continue
+
+            if char == '"':
+                in_string = True
+                result.append(char)
+                i += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                i += 2
+                while i < len(text) and text[i] not in "\r\n":
+                    i += 1
+                continue
+
+            if char == "/" and next_char == "*":
+                i += 2
+                while i + 1 < len(text) and not (text[i] == "*" and text[i + 1] == "/"):
+                    i += 1
+                i += 2
+                continue
+
+            result.append(char)
+            i += 1
+
+        return "".join(result)
+
+    def clean_markdown_inline(self, text: str) -> str:
+        """
+        Escapes text, then converts trusted inline markdown (like bold **) to HTML.
+        """
+        if not text:
+            return ""
+        text = str(escape(str(text)))
+        return re.sub(r'\*\*(.*?)\*\*|__(.*?)__', r'<strong>\1\2</strong>', text)
+
+    def rich_text_to_html(self, text: str) -> str:
+        if not text:
+            return ""
+        paragraphs = re.split(r"\n\s*\n", str(text).strip())
+        return "".join(
+            f"<p>{self.clean_markdown_inline(paragraph).replace(chr(10), '<br />')}</p>"
+            for paragraph in paragraphs
+            if paragraph.strip()
+        )
+
+    def normalize_report_data(self, report_data: dict, plan: str) -> dict:
+        normalized = {
+            "score": report_data.get("score", 85),
+            "score_explanation": self.clean_markdown_inline(
+                report_data.get("score_explanation", "Analyse globale de compatibilité.")
+            ),
+            "connexion_emotionnelle": self.rich_text_to_html(report_data.get("connexion_emotionnelle", "")),
+            "dynamique_communication": self.rich_text_to_html(report_data.get("dynamique_communication", "")),
+            "alchimie_physique": self.rich_text_to_html(report_data.get("alchimie_physique", "")),
+            "points_forts": [
+                self.clean_markdown_inline(item)
+                for item in report_data.get("points_forts", [])
+                if str(item).strip()
+            ],
+            "points_vigilance": [
+                self.clean_markdown_inline(item)
+                for item in report_data.get("points_vigilance", [])
+                if str(item).strip()
+            ],
+            "conseil_final": self.rich_text_to_html(report_data.get("conseil_final", "")),
+            "analyse_cycles_vie": self.rich_text_to_html(report_data.get("analyse_cycles_vie", "")),
+            "previsions_12m": self.rich_text_to_html(report_data.get("previsions_12m", "")),
+            "rituels": [
+                self.clean_markdown_inline(item)
+                for item in report_data.get("rituels", [])
+                if str(item).strip()
+            ],
+            "message_intention": self.rich_text_to_html(report_data.get("message_intention", "")),
+        }
+
+        try:
+            normalized["score"] = max(0, min(100, int(normalized["score"])))
+        except (TypeError, ValueError):
+            normalized["score"] = 85
+
+        if not normalized["points_forts"]:
+            normalized["points_forts"] = [
+                "<strong>Connexion intuitive forte</strong> : Une grande complicité naturelle.",
+                "<strong>Complémentarité amoureuse</strong> : Les différences enrichissent le couple.",
+            ]
+        if not normalized["points_vigilance"]:
+            normalized["points_vigilance"] = [
+                "<strong>Fusion excessive</strong> : Le piège de vouloir tout faire à deux.",
+                "<strong>Communication fermée</strong> : Risque de repli dans le silence.",
+            ]
+        if plan.upper() == "PREMIUM" and not normalized["rituels"]:
+            normalized["rituels"] = [
+                "<strong>Rituel de présence</strong> : Réservez un moment hebdomadaire sans écran pour vous retrouver.",
+            ]
+
+        return normalized
+
     def generate_pdf(self, order: Order, report_content: str) -> str:
         """
-        Genders dynamic HTML, applies CSS typography styles and outputs a high-fidelity
+        Generates dynamic HTML, applies CSS typography styles and outputs a high-fidelity
         printable PDF using WeasyPrint. Returns the absolute file path of the generated PDF.
         """
         # Ensure output directory exists
@@ -98,8 +239,31 @@ class PDFService:
 
         logger.info(f"Generating PDF for Order ID: {order.id} at {output_path}")
 
-        # Process markdown to HTML
-        report_html = self.markdown_to_html(report_content)
+        # Parse structured JSON content
+        is_json = False
+        report_data = {}
+        try:
+            json_str = self._extract_json_payload(report_content)
+            report_data = json.loads(json_str)
+            is_json = True
+        except Exception as e:
+            logger.warning(f"Could not parse report content as JSON. Falling back to markdown parsing. Error: {e}")
+
+        if is_json:
+            report_data = self.normalize_report_data(report_data, order.plan_type.value)
+        else:
+            # Markdown fallback
+            report_html = self.markdown_to_html(report_content)
+            report_data = {
+                "score": 85,
+                "score_explanation": "Analyse globale de compatibilité.",
+                "connexion_emotionnelle": report_html,
+                "dynamique_communication": "Voir l'analyse globale ci-dessus.",
+                "alchimie_physique": "Voir l'analyse globale ci-dessus.",
+                "points_forts": ["<strong>Connexion intuitive forte</strong> : Une grande complicité naturelle.", "<strong>Complémentarité amoureuse</strong> : Les différences enrichissent le couple."],
+                "points_vigilance": ["<strong>Fusion excessive</strong> : Le piège de vouloir tout faire à deux.", "<strong>Communication fermée</strong> : Risque de repli dans le silence."],
+                "conseil_final": "Cultivez le dialogue et préservez vos jardins secrets."
+            }
 
         # Load and render template
         template = self.jinja_env.get_template("report_template.html")
@@ -110,21 +274,16 @@ class PDFService:
             partner2_birthdate=order.partner2_birthdate,
             plan_type=order.plan_type.value,
             date_generated=datetime.now().strftime("%d/%m/%Y"),
-            report_html=report_html
+            report=report_data
         )
 
         if not WEASYPRINT_AVAILABLE:
             logger.warning(
-                "WeasyPrint is not available. Simulating PDF generation by writing HTML report "
-                "with an informative PDF header."
+                "WeasyPrint is not available. Using fallback PDF generator from structured report data."
             )
-            # Create a mock PDF file (actually writing a HTML/txt structure to let the flow succeed)
-            # Write a placeholder file so the developer can see it and the SMTP email doesn't crash
+            pdf_bytes = self._generate_report_pdf_bytes(order, report_data)
             with open(output_path, "wb") as f:
-                # To simulate, we just write the HTML bytes, or a tiny raw PDF.
-                # Writing a small PDF signature is safer for pdf readers, but for testing
-                # we can write standard PDF format placeholder. Let's write a simple PDF.
-                f.write(self._generate_placeholder_pdf_bytes(order))
+                f.write(pdf_bytes)
             return output_path
 
         try:
@@ -134,59 +293,174 @@ class PDFService:
             return output_path
         except Exception as e:
             logger.error(f"Failed to generate WeasyPrint PDF: {str(e)}")
-            # Fallback to simple placeholder to avoid blocking payment success
+            pdf_bytes = self._generate_report_pdf_bytes(order, report_data)
             with open(output_path, "wb") as f:
-                f.write(self._generate_placeholder_pdf_bytes(order))
+                f.write(pdf_bytes)
             return output_path
 
-    def _generate_placeholder_pdf_bytes(self, order: Order) -> bytes:
-        """
-        Generates minimal valid PDF bytes containing a placeholder message
-        to support local offline development and testing.
-        """
-        pdf_template = (
-            "%PDF-1.4\n"
-            "1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj\n"
-            "2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj\n"
-            "3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources <</Font <</F1 5 0 R>>>> >> endobj\n"
-            "4 0 obj <</Length 180>> stream\n"
-            "BT\n"
-            "/F1 18 Tf\n"
-            "50 750 Td\n"
-            "(Duovrai Love Compatibility Report) Tj\n"
-            "/F1 12 Tf\n"
-            "0 -40 Td\n"
-            "(Order ID: {order_id}) Tj\n"
-            "0 -20 Td\n"
-            "(Couple: {p1} & {p2}) Tj\n"
-            "0 -40 Td\n"
-            "(WeasyPrint Mock Mode Activated. This is a local simulation.) Tj\n"
-            "0 -20 Td\n"
-            "(To generate the full premium 8-12 page PDF report, please run inside) Tj\n"
-            "0 -15 Td\n"
-            "(the provided Docker container, or install GTK+ libraries locally.) Tj\n"
-            "ET\n"
-            "endstream\n"
-            "endobj\n"
-            "5 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj\n"
-            "xref\n"
-            "0 6\n"
-            "0000000000 65535 f\n"
-            "0000000009 00000 n\n"
-            "0000000056 00000 n\n"
-            "0000000111 00000 n\n"
-            "0000000244 00000 n\n"
-            "0000000473 00000 n\n"
-            "trailer <</Size 6 /Root 1 0 R>>\n"
-            "startxref\n"
-            "563\n"
-            "%%EOF\n"
+    def _wrap_pdf_text(self, text: str, width: int = 85) -> list[str]:
+        words = str(text).split()
+        lines = []
+        current = []
+        current_len = 0
+        for word in words:
+            if current_len + len(word) + (1 if current else 0) > width:
+                lines.append(" ".join(current))
+                current = [word]
+                current_len = len(word)
+            else:
+                current.append(word)
+                current_len += len(word) + (1 if current_len else 0)
+        if current:
+            lines.append(" ".join(current))
+        return lines
+
+    def _escape_pdf_string(self, text: str) -> str:
+        return (
+            str(text)
+            .replace("\\", "\\\\")
+            .replace("(", "\\(")
+            .replace(")", "\\)")
+            .replace("\r", "")
+            .replace("\n", " ")
         )
-        formatted_pdf = pdf_template.format(
-            order_id=order.id,
-            p1=order.partner1_name,
-            p2=order.partner2_name
-        )
-        return formatted_pdf.encode("latin-1")
+
+    def _plain_text(self, text: str) -> str:
+        if not text:
+            return ""
+        plain = re.sub(r"<[^>]+>", "", str(text))
+        plain = plain.replace("&nbsp;", " ").replace("&amp;", "&")
+        return plain.strip()
+
+    def _generate_report_pdf_bytes(self, order: Order, report_data: dict) -> bytes:
+        """
+        Generates a basic multiple-page PDF from structured report data.
+        This fallback works without WeasyPrint and creates a readable PDF file.
+        """
+        def page_lines_from_sections(sections: list[tuple[str, list[str]]]) -> list[list[str]]:
+            MAX_LINES_PER_PAGE = 45
+            pages = []
+            current_page = []
+            for title, paragraphs in sections:
+                current_page.append(title)
+                for paragraph in paragraphs:
+                    for line in self._wrap_pdf_text(paragraph, width=86):
+                        current_page.append(line)
+                    current_page.append("")
+                current_page.append("")
+                if len(current_page) >= MAX_LINES_PER_PAGE:
+                    pages.append(current_page[:MAX_LINES_PER_PAGE])
+                    current_page = current_page[MAX_LINES_PER_PAGE:]
+            if current_page:
+                pages.append(current_page)
+            return pages
+
+        sections = [
+            ("DUOVRAI — Rapport de Compatibilité", [
+                f"Commande : {order.partner1_name} & {order.partner2_name}",
+                f"Plan : {order.plan_type.value}",
+                f"Date : {datetime.now().strftime('%d/%m/%Y')}",
+                ""
+            ]),
+            ("Score Global", [
+                f"{report_data.get('score', 'N/A')} / 100",
+                self._plain_text(report_data.get('score_explanation', '')),
+            ]),
+            ("Connexion émotionnelle", [self._plain_text(report_data.get('connexion_emotionnelle', ''))]),
+            ("Dynamique de communication", [self._plain_text(report_data.get('dynamique_communication', ''))]),
+            ("Alchimie physique", [self._plain_text(report_data.get('alchimie_physique', ''))]),
+            ("Points forts", [
+                *[f"- {self._plain_text(item)}" for item in report_data.get('points_forts', [])]
+            ]),
+            ("Points de vigilance", [
+                *[f"- {self._plain_text(item)}" for item in report_data.get('points_vigilance', [])]
+            ]),
+            ("Conseil final", [self._plain_text(report_data.get('conseil_final', ''))]),
+        ]
+
+        if order.plan_type.value == "PREMIUM":
+            sections.extend([
+                ("Analyse des cycles de vie", [self._plain_text(report_data.get('analyse_cycles_vie', ''))]),
+                ("Prévisions 12 mois", [self._plain_text(report_data.get('previsions_12m', ''))]),
+                ("Rituels personnalisés", [
+                    *[f"- {self._plain_text(item)}" for item in report_data.get('rituels', [])]
+                ]),
+                ("Message d'intention", [self._plain_text(report_data.get('message_intention', ''))]),
+            ])
+
+        pages = page_lines_from_sections(sections)
+
+        stream_objects = []
+        page_objs = []
+        contents_objs = []
+        font_obj_num = 5
+        obj_index = 3
+
+        for page_num, page in enumerate(pages, start=1):
+            content_lines = ["BT", "/F1 12 Tf", "50 820 Td"]
+            for line in page:
+                escaped_line = self._escape_pdf_string(line)
+                content_lines.append(f"({escaped_line}) Tj")
+                content_lines.append("0 -14 Td")
+            content_lines.append("ET")
+            content_stream = "\n".join(content_lines)
+            content_bytes = content_stream.encode("latin-1")
+
+            contents_obj_num = obj_index + 1
+            contents_objs.append((contents_obj_num, content_bytes))
+            page_objs.append((obj_index, contents_obj_num))
+            obj_index += 2
+
+        for page_obj_num, contents_obj_num in page_objs:
+            page_dict = (
+                f"{page_obj_num} 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+                f"/Contents {contents_obj_num} 0 R /Resources <</Font <</F1 {font_obj_num} 0 R>>>> >> endobj\n"
+            )
+            stream_objects.append(page_dict.encode("latin-1"))
+
+        for contents_obj_num, content_bytes in contents_objs:
+            stream_objects.append(
+                f"{contents_obj_num} 0 obj <</Length {len(content_bytes)}>> stream\n".encode("latin-1")
+            )
+            stream_objects.append(content_bytes)
+            stream_objects.append(b"\nendstream\nendobj\n")
+
+        font_obj = f"{font_obj_num} 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj\n".encode("latin-1")
+        pages_kids = " ".join([f"{page_obj_num} 0 R" for page_obj_num, _ in page_objs])
+        pages_obj = f"2 0 obj <</Type /Pages /Kids [{pages_kids}] /Count {len(page_objs)}>> endobj\n".encode("latin-1")
+        catalog_obj = b"1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj\n"
+
+        pdf_bytes = bytearray(b"%PDF-1.4\n")
+        offsets = [0]
+        offset = len(pdf_bytes)
+        pdf_bytes.extend(catalog_obj)
+        offsets.append(offset)
+        offset += len(catalog_obj)
+        pdf_bytes.extend(pages_obj)
+        offsets.append(offset)
+        offset += len(pages_obj)
+        pdf_bytes.extend(font_obj)
+        offsets.append(offset)
+        offset += len(font_obj)
+
+        for obj in stream_objects:
+            offsets.append(offset)
+            pdf_bytes.extend(obj)
+            offset += len(obj)
+
+        xref_start = len(pdf_bytes)
+        pdf_bytes.extend(b"xref\n")
+        pdf_bytes.extend(f"0 {len(offsets)}\n".encode("latin-1"))
+        pdf_bytes.extend(b"0000000000 65535 f \n")
+        for obj_offset in offsets[1:]:
+            pdf_bytes.extend(f"{obj_offset:010d} 00000 n \n".encode("latin-1"))
+
+        pdf_bytes.extend(b"trailer <</Size ")
+        pdf_bytes.extend(f"{len(offsets)}".encode("latin-1"))
+        pdf_bytes.extend(b" /Root 1 0 R>>\nstartxref\n")
+        pdf_bytes.extend(f"{xref_start}".encode("latin-1"))
+        pdf_bytes.extend(b"\n%%EOF\n")
+
+        return bytes(pdf_bytes)
 
 pdf_service = PDFService()
