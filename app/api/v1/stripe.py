@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response, BackgroundTasks, HTTP
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.core.config import settings
-from app.database.session import get_db
+from app.database.session import get_db, SessionLocal
 from app.repositories.order_repository import order_repository
 from app.repositories.report_repository import report_repository
 from app.schemas.schemas import OrderCreate, CheckoutSessionResponse
@@ -18,24 +18,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Background generator pipeline
-async def generate_and_email_report_pipeline(order_id: str, db: Session):
+async def generate_and_email_report_pipeline(order_id: str):
     """
     Executes the long-running pipeline in the background:
     1. Claude API generates the love analysis.
     2. WeasyPrint compiles the HTML and styling to a premium PDF.
     3. Email Service sends the PDF to the customer.
     """
-    order = order_repository.get(db, order_id)
-    if not order:
-        logger.error(f"Background pipeline failed: Order {order_id} not found.")
-        return
-
-    logger.info(f"Starting background report generation pipeline for Order {order.id}")
+    db = SessionLocal()
     try:
+        order = order_repository.get(db, order_id)
+        if not order:
+            logger.error(f"Background pipeline failed: Order {order_id} not found.")
+            return
+
+        logger.info(f"Starting background report generation pipeline for Order {order.id}")
+
         # 1. Generate text compatibility report from Claude
         report_text = claude_service.generate_love_analysis(order)
 
-        # 2. Render WeasyPrint PDF
+        # 2. Render PDF (WeasyPrint or fallback)
         pdf_path = pdf_service.generate_pdf(order, report_text)
 
         # 3. Create the database record for the report
@@ -61,8 +63,13 @@ async def generate_and_email_report_pipeline(order_id: str, db: Session):
         logger.info(f"Pipeline successfully completed for Order {order.id}")
 
     except Exception as e:
-        logger.exception(f"Fatal error in background pipeline for Order {order.id}: {str(e)}")
-        order_repository.update_status(db, order.id, OrderStatus.FAILED)
+        logger.exception(f"Fatal error in background pipeline for Order {order_id}: {str(e)}")
+        try:
+            order_repository.update_status(db, order_id, OrderStatus.FAILED)
+        except Exception:
+            logger.exception(f"Failed to mark Order {order_id} as FAILED after pipeline error")
+    finally:
+        db.close()
 
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
@@ -101,7 +108,8 @@ def create_checkout(order_in: OrderCreate, db: Session = Depends(get_db)):
 
         return CheckoutSessionResponse(
             checkout_url=session_data["url"],
-            session_id=session_data["id"]
+            session_id=session_data["id"],
+            order_id=order.id,
         )
 
     except Exception as e:
@@ -113,7 +121,6 @@ def create_checkout(order_in: OrderCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/webhook")
-@router.post("/stripe/webhook")
 async def stripe_webhook(
     request: Request, 
     background_tasks: BackgroundTasks, 
@@ -122,38 +129,41 @@ async def stripe_webhook(
     """
     Receives events from Stripe Checkout. Validates signature and triggers pipeline.
     """
-    logger.info("--> Stripe Webhook POST request received at FastAPI!")
+    payload = await request.body()
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    if not sig_header and not stripe_service.is_mock_enabled():
+        logger.error("Stripe webhook received without Stripe-Signature header")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing stripe-signature header"
+        )
+
     try:
-        payload = await request.body()
-        sig_header = request.headers.get("Stripe-Signature", "")
-
-        if not sig_header and not stripe_service.is_mock_enabled():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing stripe-signature header"
-            )
-
         # Reconstruct and verify event
         event = stripe_service.construct_event(payload, sig_header)
 
-        event_type = event.type
+        if hasattr(event, "to_dict"):
+            event_data = event.to_dict()
+        elif isinstance(event, dict):
+            event_data = event
+        else:
+            event_data = {}
+
+        event_type = event_data.get("type") if isinstance(event_data, dict) else getattr(event, "type", None)
         logger.info(f"Stripe Webhook event received: {event_type}")
 
         if event_type == "checkout.session.completed":
-            session = event.data.object
-            
-            # Pull order ID from metadata safely
-            metadata = getattr(session, "metadata", None)
-            if isinstance(metadata, dict):
-                order_id = metadata.get("order_id")
-            else:
-                order_id = None
-            stripe_customer_id = getattr(session, "customer", None)
+            session = event_data.get("data", {}).get("object", {})
+            if not session:
+                logger.error("Stripe webhook checkout.session.completed missing session object")
+                return Response(status_code=400)
+
+            order_id = session.get("metadata", {}).get("order_id")
+            stripe_customer_id = session.get("customer")
             
             if order_id:
                 logger.info(f"Stripe payment confirmed for Order ID: {order_id}")
-                
-                # Update order as PAID
                 order = order_repository.get(db, order_id)
                 if order:
                     order_repository.update(
@@ -164,22 +174,23 @@ async def stripe_webhook(
                             "stripe_customer_id": stripe_customer_id
                         }
                     )
-                    
-                    # Push the generation & emailing pipeline to background
-                    background_tasks.add_task(generate_and_email_report_pipeline, order_id, db)
+                    background_tasks.add_task(generate_and_email_report_pipeline, order_id)
                 else:
                     logger.error(f"Stripe event references non-existing Order: {order_id}")
             else:
                 logger.error("Stripe Session completed but lacks order_id metadata")
+        else:
+            logger.info(f"Stripe Webhook event ignored: {event_type}")
 
         return Response(status_code=200)
-    except HTTPException as e:
-        raise e
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Unhandled error in stripe_webhook: {str(e)}")
+        logger.exception("Stripe webhook processing failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Webhook processing failed: {str(e)}"
+            detail="Stripe webhook processing failed"
         )
 
 
@@ -216,6 +227,13 @@ async def mock_checkout_success(
     # Spawn background generation task
     background_tasks.add_task(generate_and_email_report_pipeline, order.id, db)
 
-    # Redirect to frontend success page
-    redirect_url = settings.STRIPE_SUCCESS_URL.replace("{CHECKOUT_SESSION_ID}", session_id)
-    return RedirectResponse(url=redirect_url)
+    # Redirect to developer check page or return success JSON
+    return {
+        "message": "Payment simulation successful!",
+        "order_id": order.id,
+        "status": "PAID",
+        "instructions": (
+            f"The AI compatibility analysis and PDF report are being generated in the background. "
+            f"Use the endpoint '/api/v1/reports/{order.id}' to inspect status and download your report."
+        )
+    }
