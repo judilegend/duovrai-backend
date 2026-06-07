@@ -1,5 +1,7 @@
 import logging
 import anthropic
+import json
+import re
 from app.core.config import settings
 from app.models.models import Order
 from app.types.enums import PlanType
@@ -19,7 +21,7 @@ class ClaudeService:
     def generate_love_analysis(self, order: Order) -> str:
         """
         Generates a deep, rich romantic compatibility report using Anthropic Claude API.
-        Tailored based on whether they chose the 'ESSENTIEL' or 'PREMIUM' plan.
+        Returns a structured JSON string containing all the required sections.
         """
         p1_name = order.partner1_name
         p1_birth = order.partner1_birthdate
@@ -47,57 +49,173 @@ class ClaudeService:
                 system=(
                     "Tu es un expert mondial en relations de couple, psychologie relationnelle, sexologie et astrologie humaniste. "
                     "Ton ton est bienveillant, profond, mystique mais ancré dans une psychologie moderne. Tu t'exprimes en français "
-                    "de manière extrêmement raffinée. Tu génères des analyses détaillées, sans raccourcis de texte, qui seront "
-                    "compilées en rapports PDF haut de gamme."
+                    "de manière extrêmement raffinée. Tu dois obligatoirement renvoyer une réponse au format JSON strict, "
+                    "conforme au schéma demandé, sans aucun texte d'introduction ni de conclusion en dehors du JSON."
                 ),
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
             )
             
-            return message.content[0].text
+            response_text = message.content[0].text
+            # Validate JSON
+            self._parse_and_validate_json(response_text, plan)
+            return response_text
 
         except Exception as e:
-            logger.error(f"Error calling Claude API: {str(e)}")
+            logger.error(f"Error calling Claude API or parsing response: {str(e)}")
             # Fallback to premium mockup instead of throwing error, protecting B2C billing
             return self._generate_mock_analysis(p1_name, p1_birth, p2_name, p2_birth, plan)
 
+    def _parse_and_validate_json(self, text: str, plan: str) -> dict:
+        json_str = self._extract_json_payload(text)
+        data = json.loads(json_str)
+        
+        required_keys = [
+            "score", "score_explanation", "connexion_emotionnelle", 
+            "dynamique_communication", "alchimie_physique", 
+            "points_forts", "points_vigilance", "conseil_final"
+        ]
+        if plan == "PREMIUM":
+            required_keys += ["analyse_cycles_vie", "previsions_12m", "rituels", "message_intention"]
+            
+        for key in required_keys:
+            if key not in data:
+                raise ValueError(f"Missing required JSON key: {key}")
+        return data
+
+    def _extract_json_payload(self, text: str) -> str:
+        if not text:
+            raise ValueError("Empty Claude response")
+
+        cleaned = text.strip()
+        fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
+        if fence_match:
+            cleaned = fence_match.group(1).strip()
+
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            raise ValueError("Claude response does not contain a JSON object")
+
+        json_text = cleaned[start:end + 1]
+        json_text = self._strip_json_comments(json_text)
+        json_text = re.sub(r",(\s*[}\]])", r"\1", json_text)
+        return json_text
+
+    def _strip_json_comments(self, text: str) -> str:
+        result = []
+        in_string = False
+        escaped = False
+        i = 0
+
+        while i < len(text):
+            char = text[i]
+            next_char = text[i + 1] if i + 1 < len(text) else ""
+
+            if in_string:
+                result.append(char)
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                i += 1
+                continue
+
+            if char == '"':
+                in_string = True
+                result.append(char)
+                i += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                i += 2
+                while i < len(text) and text[i] not in "\r\n":
+                    i += 1
+                continue
+
+            if char == "/" and next_char == "*":
+                i += 2
+                while i + 1 < len(text) and not (text[i] == "*" and text[i + 1] == "/"):
+                    i += 1
+                i += 2
+                continue
+
+            result.append(char)
+            i += 1
+
+        return "".join(result)
+
     def _craft_compatibility_prompt(self, p1: str, b1: str, p2: str, b2: str, plan: str) -> str:
-        base_instructions = f"""
-Génère une analyse approfondie de compatibilité amoureuse pour le couple suivant :
+        if plan == "PREMIUM":
+            return f"""
+Génère une analyse approfondie de compatibilité amoureuse premium pour le couple :
 Partenaire 1 : {p1} (né(e) le {b1})
 Partenaire 2 : {p2} (né(e) le {b2})
 
-Rédige l'analyse EN FRANÇAIS sous forme de rapport structuré en Markdown.
-Utilise des titres hiérarchisés (##, ###) et un ton captivant, émotionnel et professionnel.
-Ne fais aucune introduction administrative ou méta-commentaire, commence directement par l'analyse amoureuse.
-"""
-        
-        if plan == "PREMIUM":
-            return base_instructions + f"""
-Ce couple a souscrit à notre formule **PREMIUM**. Le rapport doit être extrêmement complet, riche et structuré pour s'étendre sur 8 à 12 pages après conversion PDF.
+Rédige l'analyse EN FRANÇAIS sous forme de JSON strict avec exactement la structure suivante.
+Ne renvoie aucun bloc markdown, aucun commentaire, aucune virgule finale et aucun texte hors du JSON.
+Chaque section textuelle doit faire environ 200 à 300 mots (2 à 3 paragraphes maximum) pour tenir parfaitement sur une page A4 sans déborder.
 
-Tu dois impérativement aborder en détail les 8 chapitres suivants, avec au moins 3 paragraphes denses par chapitre :
-
-1. **Introduction et Énergie Initiale du Couple** (Analyse vibratoire de l'alliance entre {p1} et {p2})
-2. **Le Pilier Émotionnel** (Comment leurs cœurs se connectent, leurs sensibilités mutuelles, empathie et blessures d'attachement respectives)
-3. **Le Pilier de la Communication** (Comment ils échangent, résolvent les conflits, les malentendus typiques et les clés pour s'entendre)
-4. **Alchimie, Passion et Intimité** (Le magnétisme physique, l'alchimie sensuelle, l'expression du désir et leur connexion intime)
-5. **Défis Caractéristiques de cette Union** (Les points de friction potentiels, ce qui pourrait les séparer ou causer de l'usure)
-6. **Harmonie de Vie et Projets Communs** (Leur vision à long terme : foyer, finances, famille, voyages et ambitions de vie)
-7. **Bilan Numérologique et Astrologique Synastrique** (Utilise leurs dates de naissance : {b1} et {b2} pour calculer et expliquer leurs chemins de vie et planètes de compatibilité de façon symbolique et inspirante)
-8. **Plan d'Action du Couple (Les 10 Commandements)** (10 conseils ultra-personnalisés et actionnables pour surmonter leurs défis et faire durer leur amour toute une vie)
-
-Renseigne des métaphores poétiques et des analyses psychologiques profondes. Sois très généreux sur le texte.
+Schéma JSON attendu :
+{{
+  "score": 85,
+  "score_explanation": "Une explication synthétique du score (3-4 lignes).",
+  "connexion_emotionnelle": "Analyse détaillée de la connexion émotionnelle, vulnérabilités et sensibilité mutuelle.",
+  "dynamique_communication": "Analyse détaillée de la communication, résolution de conflits et clés d'entente.",
+  "alchimie_physique": "Analyse de l'alchimie intime, passion, magnétisme physique et désir.",
+  "points_forts": [
+    "Point fort 1 avec son titre en gras et une explication claire.",
+    "Point fort 2 avec son titre en gras et une explication claire.",
+    "Point fort 3 avec son titre en gras et une explication claire."
+  ],
+  "points_vigilance": [
+    "Point de vigilance 1 avec son titre en gras et une explication claire.",
+    "Point de vigilance 2 avec son titre en gras et une explication claire.",
+    "Point de vigilance 3 avec son titre en gras et une explication claire."
+  ],
+  "conseil_final": "Un conseil final personnalisé et inspirant pour sceller leur union.",
+  "analyse_cycles_vie": "Analyse numérologique basée sur les dates de naissance {b1} et {b2} détaillant les cycles de vie respectifs et leur croisement.",
+  "previsions_12m": "Prévisions claires sur les périodes favorables et délicates pour les 12 prochains mois.",
+  "rituels": [
+    "Rituel 1 : explication détaillée d'un rituel de couple personnalisé.",
+    "Rituel 2 : explication détaillée d'un rituel de couple personnalisé.",
+    "Rituel 3 : explication détaillée d'un rituel de couple personnalisé."
+  ],
+  "message_intention": "Un message d'intention poétique et inspirant co-rédigé par l'IA pour le couple."
+}}
 """
         else:
-            return base_instructions + f"""
-Ce couple a souscrit à notre formule **ESSENTIEL**. Rédige un rapport équilibré et percutant de 4 chapitres :
+            return f"""
+Génère une analyse de compatibilité amoureuse essentielle pour le couple :
+Partenaire 1 : {p1} (né(e) le {b1})
+Partenaire 2 : {p2} (né(e) le {b2})
 
-1. **La Connexion Initiale** (Vibe globale entre {p1} et {p2})
-2. **Communication & Émotions** (Le dialogue du cœur et de l'esprit)
-3. **Alchimie & Magnétisme** (Leur dynamique d'attraction intime)
-4. **Conseils d'Or pour l'Avenir** (3 conseils concrets pour consolider leur amour)
+Rédige l'analyse EN FRANÇAIS sous forme de JSON strict avec exactement la structure suivante.
+Ne renvoie aucun bloc markdown, aucun commentaire, aucune virgule finale et aucun texte hors du JSON.
+Chaque section textuelle doit faire environ 200 à 300 mots (2 à 3 paragraphes maximum) pour tenir parfaitement sur une page A4 sans déborder.
+
+Schéma JSON attendu :
+{{
+  "score": 85,
+  "score_explanation": "Une explication synthétique du score (3-4 lignes).",
+  "connexion_emotionnelle": "Analyse de la connexion émotionnelle, vulnérabilités et sensibilité mutuelle.",
+  "dynamique_communication": "Analyse de la communication, résolution de conflits et clés d'entente.",
+  "alchimie_physique": "Analyse de l'alchimie intime, passion, magnétisme physique et désir.",
+  "points_forts": [
+    "Point fort 1 avec son titre en gras et une explication claire.",
+    "Point fort 2 avec son titre en gras et une explication claire.",
+    "Point fort 3 avec son titre en gras et une explication claire."
+  ],
+  "points_vigilance": [
+    "Point de vigilance 1 avec son titre en gras et une explication claire.",
+    "Point de vigilance 2 avec son titre en gras et une explication claire.",
+    "Point de vigilance 3 avec son titre en gras et une explication claire."
+  ],
+  "conseil_final": "Un conseil final personnalisé et inspirant pour sceller leur union."
+}}
 """
 
     def _generate_mock_analysis(self, p1: str, b1: str, p2: str, b2: str, plan: str) -> str:
@@ -105,115 +223,37 @@ Ce couple a souscrit à notre formule **ESSENTIEL**. Rédige un rapport équilib
         Generates structured romantic compatibility reports in French.
         Used for local offline development, tests, or API fallback.
         """
+        data = {
+            "score": 88,
+            "score_explanation": f"L'union de {p1} et {p2} s'annonce sous des auspices vibratoires fascinants. En analysant le croisement de vos chemins de vie issus de vos dates de naissance ({b1} et {b2}), on perçoit immédiatement une polarité dynamique propice à une attraction magnétique solide et durable.",
+            "connexion_emotionnelle": f"Sur le plan émotionnel, la compatibilité entre {p1} et {p2} touche à une profondeur rare. Vous n'êtes pas de ceux qui se contentent de conversations superficielles. La connexion s'établit au niveau du non-dit, des regards partagés et des silences habités.\n\nVous êtes extrêmement sensibles aux humeurs de l'autre, offrant un espace de sécurité émotionnelle unique, bien que parfois submergés par votre propre empathie réciproque. Apprendre à différencier vos propres émotions de celles de votre partenaire sera la clé de voûte de votre stabilité affective.",
+            "dynamique_communication": f"Votre style de communication est hautement instinctif. Vous partagez une forme de télépathie amoureuse qui fait souvent l'admiration de votre entourage. Vous finissez les phrases de l'autre et devinez ses intentions bien avant qu'elles ne soient formulées.\n\nNéanmoins, en cas de désaccord, les schémas de défense s'activent de façon marquée. L'un aura tendance à se replier dans son silence protecteur, tandis que l'autre aura besoin d'une résolution immédiate. Instaurez la règle du sas pour donner à chacun le temps de réfléchir avant de s'exprimer.",
+            "alchimie_physique": f"Sur le plan de l'intimité, le feu créateur brûle avec une intensité rare. L'alchimie entre {p1} et {p2} dépasse largement le cadre purement physique pour s'élever au rang d'une véritable union vibratoire. C'est dans le secret de votre espace privé que vos différences se résolvent et fusionnent.\n\nIl y a une dimension magnétique indéniable : l'un est fasciné par la sensualité et le mystère de l'autre, tandis que l'autre trouve dans cette étreinte un ancrage rassurant et une intensité stabilisatrice. Veillez à préserver cet espace de la routine quotidienne.",
+            "points_forts": [
+                "**Télépathie intuitive** : Une capacité innée à ressentir et à comprendre les besoins profonds de votre partenaire sans parole.",
+                "**Complémentarité des rôles** : L'un apporte la structure et la planification, tandis que l'autre apporte l'inspiration et la créativité.",
+                "**Alchimie magnétique** : Une connexion physique et sensuelle extrêmement puissante qui sert de ciment dans les moments de doute."
+            ],
+            "points_vigilance": [
+                "**Fusion excessive** : Le risque de vous perdre dans la relation et d'étouffer l'individualité de chacun.",
+                "**Schémas de repli** : La tendance à s'enfermer dans le silence lors des conflits majeurs au lieu d'ouvrir le dialogue.",
+                "**Conflit de contrôle** : Des frictions possibles entre le besoin de planifier l'avenir et le besoin de spontanéité."
+            ],
+            "conseil_final": f"Pour faire de votre amour une œuvre intemporelle, apprenez à chérir à la fois ce qui vous unit et ce qui vous différencie. L'amour n'est pas une fusion où les identités s'effacent, mais un duo harmonieux où chaque voix reste distincte. Continuez à bâtir vos projets avec patience et confiance."
+        }
+
         if plan == "PREMIUM":
-            return f"""# Rapport de Compatibilité Spirituelle & Emotionnelle
-## {p1} & {p2}
+            data.update({
+                "analyse_cycles_vie": f"En mariant les énergies vibratoires du {b1} et du {b2}, nous obtenons une synastrie d'une rare élégance. Vos chemins de vie révèlent une dynamique karmique forte : vous êtes réunis pour guérir des blessures d'attachement anciennes et apprendre la confiance absolue.\n\nLe croisement de vos cycles numériques indique que vous entrez actuellement dans une phase de stabilisation et de concrétisation matérielle (foyer, projets de vie à long terme).",
+                "previsions_12m": "Les 6 prochains mois seront marqués par une intensité passionnelle accrue et des opportunités de voyages à deux. Soyez vigilants autour du 9ème mois, où une baisse de communication pourrait créer de petits malentendus. Les 3 derniers mois de l'année seront parfaits pour concrétiser un projet immobilier ou familial.",
+                "rituels": [
+                    "**Le Rituel du Miroir Matinal** : Prenez 1 minute chaque matin pour vous regarder dans les yeux en silence avant de commencer la journée.",
+                    "**La Boîte à Gratitude** : Notez chaque semaine un moment de gratitude envers votre partenaire et lisez-les ensemble le week-end.",
+                    "**L'Escapade sans Écran** : Déterminez une soirée par semaine sans aucun appareil connecté, dédiée uniquement à la conversation intime."
+                ],
+                "message_intention": f"Que cette alliance entre {p1} et {p2} soit le phare qui éclaire vos nuits et le soleil qui réchauffe vos jours. Puisse votre amour grandir en liberté, s'ancrer dans la confiance et rayonner de toute sa beauté originelle."
+            })
 
----
-
-## Chapitre 1 : Introduction et Énergie Initiale du Couple
-
-L'union de {p1} et {p2} s'annonce sous des auspices vibratoires fascinants. En analysant la résonance de leurs prénoms et la géométrie sacrée de leurs chemins de vie issus de leurs dates de naissance ({b1} et {b2}), on perçoit immédiatement une polarité dynamique. Il ne s'agit pas d'une simple rencontre fortuite, mais d'une attraction magnétique qui bouscule les structures établies. 
-
-{p1} apporte à cette relation une structure solide, une quête d'harmonie concrète et une sensibilité à fleur de peau, souvent dissimulée derrière une façade de maîtrise. {p2}, de son côté, rayonne d'une énergie d'exploration, de renouveau et d'une intensité spirituelle qui agit comme un catalyseur sur son partenaire. Ensemble, vous créez une bulle intime où la réalité quotidienne prend des couleurs poétiques.
-
-La première rencontre vibratoire indique un accord majeur : une capacité à rêver ensemble. Cependant, la tension nécessaire à toute évolution est présente. Ce couple possède l'étincelle des grandes histoires, celles qui forcent chacun à grandir, à guérir ses vieilles blessures d'enfance, et à réapprendre le langage de la confiance absolue.
-
----
-
-## Chapitre 2 : Le Pilier Émotionnel et la Fusion des Cœurs
-
-Sur le plan émotionnel, la compatibilité entre {p1} et {p2} touche à une profondeur rare. Vous n'êtes pas de ceux qui se contentent de conversations superficielles. La connexion s'établit au niveau du non-dit, des regards partagés et des silences habités. 
-
-* **La vulnérabilité de {p1}** : Face à la présence de {p2}, {p1} ressent à la fois le désir de s'ouvrir totalement et la peur instinctive d'être mis(e) à nu. Cette ambivalence est normale et fait partie de votre processus d'apprentissage.
-* **L'empathie de {p2}** : {p2} possède l'antenne intuitive nécessaire pour capter les micro-variations d'humeur de {p1}, offrant un espace de sécurité émotionnelle unique, bien que parfois submergé par sa propre émotivité.
-
-Votre défi majeur dans ce chapitre réside dans la gestion de vos éponges émotionnelles réciproques. Parce que vous ressentez tout au décuple, un nuage passager chez l'un peut provoquer une tempête existentielle chez l'autre. Apprendre à différencier vos propres émotions de celles de votre partenaire sera la clé de voûte de votre stabilité affective.
-
----
-
-## Chapitre 3 : Le Pilier de la Communication et la Résolution des Tempêtes
-
-Comment dialoguent les âmes de {p1} et {p2} ? Votre style de communication est hautement instinctif. Vous partagez une forme de télépathie amoureuse qui fait souvent l'admiration de votre entourage. Vous finissez les phrases de l'autre et devinez ses intentions bien avant qu'elles ne soient formulées.
-
-Néanmoins, en cas de désaccord, les schémas de défense s'activent de façon marquée. {p1} aura tendance à se replier dans son silence protecteur, analysant les faits avec une apparente froideur pour éviter d'être blessé(e). À l'inverse, {p2} aura besoin d'une résolution immédiate, parfois verbale et passionnée, interprétant le retrait de son partenaire comme un abandon ou un désintérêt.
-
-Pour harmoniser ce pilier :
-1. **Instaurez la règle du sas** : Permettez à {p1} de prendre un temps de réflexion avant de parler, sans que {p2} ne se sente exclu(e).
-2. **Pratiquez l'écoute active** : Reformulez les besoins de l'autre sans chercher à avoir raison à tout prix.
-
----
-
-## Chapitre 4 : Alchimie, Passion et Intimité Sacrée
-
-Sur le plan de l'intimité, le feu créateur brûle avec une intensité rare. L'alchimie entre {p1} et {p2} dépasse largement le cadre purement physique pour s'élever au rang d'une véritable union tantrique. C'est dans le secret de votre espace sacré que vos différences se résolvent et fusionnent.
-
-Il y a une dimension magnétique indéniable : {p1} est fasciné(e) par la sensualité et le mystère magnétique de {p2}, tandis que {p2} trouve dans les bras de {p1} un ancrage rassurant et une intensité qui le(la) stabilise. Les moments d'intimité agissent pour votre couple comme un véritable bain de régénération énergétique.
-
-Votre sexualité n'est pas routinière; elle se nourrit de complicité, de jeux, de délicatesse et d'une curiosité mutuelle. Veillez à préserver cet espace des intrusions du stress quotidien, car c'est le baromètre le plus fiable de la santé globale de votre couple.
-
----
-
-## Chapitre 5 : Défis Majeurs et Points de Friction
-
-Aucune grande alliance ne vient sans défis de taille. Pour {p1} et {p2}, l'obstacle principal est le piège de la fusion excessive. À force de vouloir ne faire qu'un, vous risquez de perdre vos individualités et d'étouffer la passion, qui a besoin d'air et de distance pour se renouveler.
-
-Un autre point de friction réside dans la gestion du contrôle. {p1} aime planifier, structurer l'avenir et sécuriser le foyer, ce qui peut parfois être perçu par {p2} comme une restriction de sa liberté et de sa spontanéité créative. Trouver le juste équilibre entre structure et liberté sera votre grand œuvre.
-
----
-
-## Chapitre 6 : Harmonie de Vie et Projets Communs
-
-Construire un empire à deux est tout à fait dans vos cordes. Vos visions du monde, bien que colorées différemment, convergent vers le même désir profond : créer un foyer chaleureux, esthétique, et propice à l'accueil de vos proches. Vous formez une excellente équipe pour matérialiser vos rêves.
-
-* **Le rôle de bâtisseur** : {p1} excelle à structurer les étapes des projets (achat immobilier, gestion financière, logistique).
-* **Le rôle d'inspirateur** : {p2} insuffle l'âme, le design, la créativité et les relations publiques de vos projets communs.
-
----
-
-## Chapitre 7 : Bilan Astrologique & Numérologique Synastrique
-
-En mariant les énergies vibratoires du **{b1}** et du **{b2}**, nous obtenons une synastrie d'une rare élégance. Le couple exprime une forte présence de l'élément Eau (l'intuition, les sentiments) complétée par une structure de Terre qui garantit la pérennité.
-
-Vos nombres de destin personnels révèlent un chemin de vie complémentaire qui vous pousse mutuellement à sortir de vos zones de confort respectives. Votre alliance est karmique : elle vise à guérir des mémoires familiales anciennes pour vous permettre de vivre un amour pleinement conscient et libéré du passé.
-
----
-
-## Chapitre 8 : Le Plan d'Action du Couple (Les 10 Commandements)
-
-Pour faire de votre amour une œuvre intemporelle, voici vos dix règles d'or personnalisées :
-
-1. **Honorez vos jardins secrets** : Gardez des activités et des passions individuelles pour nourrir le désir.
-2. **Célébrez les rituels du soir** : Prenez 10 minutes chaque jour pour vous reconnecter sans écrans.
-3. **Désamorcez par le rire** : Utilisez votre complicité humoristique pour faire tomber les tensions.
-4. **Acceptez l'imperfection de l'autre** : Aimez les failles de votre partenaire, c'est là que passe la lumière.
-5. **Valorisez les efforts du bâtisseur** : {p2} doit exprimer sa gratitude pour le travail de structure de {p1}.
-6. **Nourrissez la spontanéité** : {p1} doit accepter de partir à l'aventure sans planifier de temps en temps.
-7. **Parlez le langage de l'autre** : Découvrez et pratiquez les langages de l'amour dominants chez votre partenaire.
-8. **Créez un sanctuaire** : Faites de votre chambre à coucher un espace exclusivement dédié à l'amour et au repos.
-9. **Exprimez vos peurs d'abandon** : Verbalisez vos doutes plutôt que de vous murer dans le silence ou la colère.
-10. **Croyez en votre force** : Rappelez-vous, dans les moments de doute, la beauté unique de l'étincelle qui vous a unis.
-"""
-        else:
-            return f"""# Analyse de Compatibilité
-## {p1} & {p2}
-
----
-
-## Chapitre 1 : La Connexion Initiale
-L'union de {p1} et {p2} est guidée par une belle harmonie naturelle. Vos énergies se complètent harmonieusement : {p1} apporte un ancrage rassurant et une clarté d'esprit, tandis que {p2} insuffle un vent de créativité, de sensibilité et de renouveau dans votre quotidien. Ensemble, vous formez un couple équilibré et résilient.
-
-## Chapitre 2 : Communication & Émotions
-Votre communication est fluide et intuitive. Vous parvenez facilement à comprendre les états d'âme de l'autre sans longs discours. Votre sensibilité mutuelle vous permet de créer une atmosphère sécurisante et chaleureuse. Veillez simplement, lors des désaccords, à ce que {p1} ne se renferme pas dans le silence et à ce que {p2} exprime ses besoins avec calme.
-
-## Chapitre 3 : Alchimie & Magnétisme
-Physiquement et spirituellement, l'attraction entre vous est forte. Il y a un profond respect mutuel doublé d'une alchimie sensuelle vibrante. Votre intimité est un espace de confiance et de complicité ludique où vous aimez vous ressourcer et explorer de nouvelles dimensions à deux.
-
-## Chapitre 4 : Conseils d'Or pour l'Avenir
-Pour pérenniser votre amour :
-1. **Communiquez avec bienveillance** : Ne laissez aucun non-dit s'accumuler.
-2. **Préservez vos espaces personnels** : L'indépendance de chacun enrichit la relation.
-3. **Cultivez la surprise** : Cassez la routine quotidienne par des rendez-vous improvisés.
-"""
+        return json.dumps(data, ensure_ascii=False)
 
 claude_service = ClaudeService()
