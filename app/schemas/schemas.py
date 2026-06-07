@@ -30,6 +30,7 @@ class OrderResponse(BaseModel):
 class CheckoutSessionResponse(BaseModel):
     checkout_url: str
     session_id: str
+    order_id: str
 
 class ReportResponse(BaseModel):
     id: str
