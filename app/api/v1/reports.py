@@ -27,7 +27,7 @@ def get_order_status(order_id: str, db: Session = Depends(get_db)):
     return order
 
 
-@router.get("/reports/{order_id}", response_model=ReportResponse)
+@router.get("/{order_id}", response_model=ReportResponse)
 def get_report_details(order_id: str, db: Session = Depends(get_db)):
     """
     Fetches the details of the compatibility report associated with an order.
@@ -49,7 +49,7 @@ def get_report_details(order_id: str, db: Session = Depends(get_db)):
     return report
 
 
-@router.get("/reports/{order_id}/download")
+@router.get("/{order_id}/download")
 def download_pdf_report(order_id: str, db: Session = Depends(get_db)):
     """
     Downloads the compiled WeasyPrint PDF report as a binary response.
