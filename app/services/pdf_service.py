@@ -29,6 +29,7 @@ class PDFService:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
             "templates"
         )
+        self.template_dir = template_dir
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
     def markdown_to_html(self, markdown_text: str) -> str:
@@ -287,8 +288,8 @@ class PDFService:
             return output_path
 
         try:
-            # Generate premium PDF using WeasyPrint
-            weasyprint.HTML(string=rendered_html).write_pdf(output_path)
+            # Generate premium PDF using WeasyPrint with local asset resolution
+            weasyprint.HTML(string=rendered_html, base_url=self.template_dir).write_pdf(output_path)
             logger.info("PDF report successfully created.")
             return output_path
         except Exception as e:
