@@ -4,9 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from app.core.config import settings
 from app.database.base import Base
-from app.database.session import engine
+from app.database.session import engine, SessionLocal
+from app.models.models import Admin
+from app.services.auth_service import auth_service
 from app.api.v1.stripe import router as stripe_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.admin import router as admin_router
 
 # Setup Logging
 logging.basicConfig(
@@ -44,12 +47,42 @@ def configure_db():
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables initialized successfully.")
+        create_default_admin()
     except Exception as e:
         logger.exception("Failed to initialize database tables:")
+
+
+def create_default_admin() -> None:
+    if not settings.ADMIN_EMAIL or not settings.ADMIN_PASSWORD:
+        logger.warning("Default admin account not configured. Skipping admin creation.")
+        return
+
+    db = SessionLocal()
+    try:
+        existing_admin = db.query(Admin).filter(Admin.email == settings.ADMIN_EMAIL).first()
+        if existing_admin:
+            logger.info("Default admin already exists: %s", settings.ADMIN_EMAIL)
+            return
+
+        admin = Admin(
+            email=settings.ADMIN_EMAIL,
+            password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
+            full_name=settings.ADMIN_FULL_NAME,
+            is_active=True,
+        )
+        db.add(admin)
+        db.commit()
+        logger.info("Default admin account created: %s", settings.ADMIN_EMAIL)
+    except Exception:
+        logger.exception("Failed to create default admin account.")
+        db.rollback()
+    finally:
+        db.close()
 
 # Mount Api Routers
 app.include_router(stripe_router, prefix="/api/v1/stripe", tags=["Stripe Checkout"])
 app.include_router(reports_router, prefix="/api/v1/reports", tags=["Reports & Orders"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin Panel"])
 
 # Root Landing/Documentation Endpoint
 @app.get("/", response_class=HTMLResponse)
