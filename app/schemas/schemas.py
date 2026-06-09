@@ -40,3 +40,71 @@ class ReportResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Admin Auth Schemas
+class AdminLoginRequest(BaseModel):
+    email: EmailStr = Field(..., description="Admin email address")
+    password: str = Field(..., min_length=1, description="Admin password")
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int  # seconds
+
+class AdminResponse(BaseModel):
+    id: str
+    email: str
+    full_name: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class AdminLoginResponse(BaseModel):
+    admin: AdminResponse
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+class OrderListResponse(BaseModel):
+    id: str
+    email: str
+    partner1_name: str
+    partner2_name: str
+    status: OrderStatus
+    amount: float
+    plan_type: PlanType
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Admin Dashboard / Transactions
+class TransactionSummary(BaseModel):
+    total_orders: int
+    total_revenue: float
+    orders_pending: int
+    orders_completed: int
+    orders_failed: int
+
+
+class OrderDetailResponse(BaseModel):
+    id: str
+    email: str
+    partner1_name: str
+    partner2_name: str
+    status: OrderStatus
+    amount: float
+    plan_type: PlanType
+    created_at: datetime
+    stripe_session_id: Optional[str] = None
+
+    class Config:
+        from_attributes = True
