@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from fastapi import APIRouter, Depends, Request, Response, BackgroundTasks, HTTPException, status
@@ -12,6 +13,7 @@ from app.services.stripe_service import stripe_service
 from app.services.claude_service import claude_service
 from app.services.pdf_service import pdf_service
 from app.services.email_service import email_service
+from app.services.ws_manager import broadcast_order_payload
 from app.types.enums import OrderStatus, PlanType
 
 logger = logging.getLogger(__name__)
@@ -166,7 +168,7 @@ async def stripe_webhook(
                 logger.info(f"Stripe payment confirmed for Order ID: {order_id}")
                 order = order_repository.get(db, order_id)
                 if order:
-                    order_repository.update(
+                    order = order_repository.update(
                         db,
                         db_obj=order,
                         obj_in_data={
@@ -174,6 +176,8 @@ async def stripe_webhook(
                             "stripe_customer_id": stripe_customer_id
                         }
                     )
+                    if order:
+                        broadcast_order_payload(order)
                     background_tasks.add_task(generate_and_email_report_pipeline, order_id)
                 else:
                     logger.error(f"Stripe event references non-existing Order: {order_id}")
@@ -215,7 +219,7 @@ async def mock_checkout_success(
         )
 
     # Transition status: PENDING -> PAID
-    order_repository.update(
+    order = order_repository.update(
         db,
         db_obj=order,
         obj_in_data={
@@ -223,6 +227,9 @@ async def mock_checkout_success(
             "stripe_customer_id": "cus_mock_12345"
         }
     )
+
+    if order:
+        broadcast_order_payload(order)
 
     # Spawn background generation task
     background_tasks.add_task(generate_and_email_report_pipeline, order.id, db)
