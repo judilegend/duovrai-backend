@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Text, Enum as SQLEnum, Boolean
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 from app.types.enums import OrderStatus, PlanType
@@ -58,3 +58,18 @@ class CompatibilityReport(Base):
 
     def __repr__(self) -> str:
         return f"<CompatibilityReport(id={self.id}, order_id={self.order_id})>"
+
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<Admin(id={self.id}, email={self.email})>"
