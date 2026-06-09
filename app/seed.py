@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session, close_all_sessions
 from app.core.config import settings
 from app.database.session import SessionLocal, engine
 from app.database.base import Base
-from app.models.models import Order, CompatibilityReport
+from app.models.models import Admin, Order, CompatibilityReport
+from app.services.auth_service import auth_service
 from app.types.enums import OrderStatus, PlanType
 
 logging.basicConfig(level=logging.INFO)
@@ -45,9 +46,23 @@ def seed_database(reset: bool = False):
     db: Session = SessionLocal()
     
     try:
-        # Check if already seeded
+        # Ensure default admin exists before seeding demo data.
+        if settings.ADMIN_EMAIL and settings.ADMIN_PASSWORD:
+            existing_admin = db.query(Admin).filter(Admin.email == settings.ADMIN_EMAIL).first()
+            if not existing_admin:
+                db.add(
+                    Admin(
+                        email=settings.ADMIN_EMAIL,
+                        password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
+                        full_name=settings.ADMIN_FULL_NAME,
+                        is_active=True,
+                    )
+                )
+
+        # Check if demo orders are already created
         if db.query(Order).first():
             logger.info("Database already seeded with demo data.")
+            db.commit()
             return
 
         # 1. Seed a Pending Order (Unpaid)
