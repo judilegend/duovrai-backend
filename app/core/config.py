@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "reports@duovrai.com"
     SMTP_FROM_NAME: str = "Duovrai - Analyse Amoureuse"
 
+    # Default admin credentials
+    ADMIN_EMAIL: str = "admin@duovrai.com"
+    ADMIN_PASSWORD: str = "admin@2026"
+    ADMIN_FULL_NAME: str = "Duovrai Admin"
+
+    # JWT Secret Key
+    SECRET_KEY: str = "51TSK3NFWwuVJ3DHFINF4KYTJnDiOoINPg7T96t91DZb7w8oyVUsZalcF6pqmjXIhVYXqsWeJFZ4w5mrfpuWOD7RD00KK0sI0GR"
+
     # PDF Output Storage Path
     PDF_OUTPUT_DIR: str = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -67,3 +75,13 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
+# Normalize PDF_OUTPUT_DIR: if the environment provided a relative path
+# (for example "./storage/reports"), resolve it against the project root
+# so runtime always writes into the repository instead of an arbitrary CWD.
+if settings.PDF_OUTPUT_DIR and not os.path.isabs(settings.PDF_OUTPUT_DIR):
+    _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    settings.PDF_OUTPUT_DIR = os.path.abspath(
+        os.path.join(_project_root, settings.PDF_OUTPUT_DIR)
+    )
+
